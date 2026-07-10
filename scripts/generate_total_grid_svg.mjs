@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const root = path.resolve('D:/Codex/running_page');
+const root = process.cwd();
 const activitiesPath = path.join(root, 'src', 'static', 'activities.json');
 const outputPath = path.join(root, 'assets', 'grid.svg');
 
