@@ -297,9 +297,79 @@ jobs:
   publish_github_pages:
     if: needs.sync.result == 'success' && needs.sync.outputs.BUILD_GH_PAGES == 'true'
     name: Build and publish Github Pages
-    uses: ./.github/workflows/gh-pages.yml
-    with:
-      save_data_in_github_cache: ${{needs.sync.outputs.SAVE_DATA_IN_GITHUB_CACHE == 'true'}}
-      data_cache_prefix: ${{needs.sync.outputs.DATA_CACHE_PREFIX}}
     needs:
       - sync
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Cache Data Files
+        if: needs.sync.outputs.SAVE_DATA_IN_GITHUB_CACHE == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            activities
+            assets
+            GPX_OUT
+            TCX_OUT
+            FIT_OUT
+            Workouts
+            run_page/data.db
+            src/static/activities.json
+            imported.json
+          key: ${{ needs.sync.outputs.DATA_CACHE_PREFIX }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ needs.sync.outputs.DATA_CACHE_PREFIX }}-${{ github.sha }}-
+            ${{ needs.sync.outputs.DATA_CACHE_PREFIX }}-
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable corepack
+        run: npm install -g corepack@latest && corepack enable pnpm
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: PATH_PREFIX=/$REPO_NAME pnpm build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: pages-artifact
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: pages-artifact
